@@ -1,13 +1,16 @@
-"""Tests for feature selection and the train/test split."""
-
+import numpy as np
 import pandas as pd
 import pytest
+from sklearn.linear_model import LogisticRegression
 
 from latedeliveries.pipeline import (
     CATEGORICAL_FEATURES,
     NUMERIC_FEATURES,
+    build_pipeline,
     split_orders,
 )
+
+"""Tests for feature selection and the train/test split."""
 
 
 @pytest.mark.parametrize(
@@ -53,3 +56,55 @@ def test_split_has_correct_sizes_and_no_overlap(orders: pd.DataFrame) -> None:
     assert set(x_train.index) | set(x_test.index) == set(orders.index)
     assert x_train.index.equals(y_train.index)
     assert x_test.index.equals(y_test.index)
+
+
+def test_pipeline_returns_valid_probabilities(orders: pd.DataFrame) -> None:
+    x_train, x_test, y_train, _ = split_orders(orders)
+    pipeline = build_pipeline(LogisticRegression(max_iter=1000))
+    pipeline.fit(x_train, y_train)
+
+    probabilities = pipeline.predict_proba(x_test)
+
+    assert probabilities.shape == (len(x_test), 2)
+    assert np.isfinite(probabilities).all()
+    assert ((probabilities >= 0) & (probabilities <= 1)).all()
+    np.testing.assert_allclose(probabilities.sum(axis=1), 1.0)
+
+
+def test_pipeline_handles_missing_values_and_unseen_weather(
+    orders: pd.DataFrame,
+) -> None:
+    x_train, x_test, y_train, _ = split_orders(orders)
+    pipeline = build_pipeline(LogisticRegression(max_iter=1000))
+    pipeline.fit(x_train, y_train)
+
+    new_order = x_test.iloc[[0]].copy()
+    new_order["distance_km"] = np.nan
+    new_order["prep_minutes"] = np.nan
+    new_order["weather"] = "hail"
+
+    probabilities = pipeline.predict_proba(new_order)
+
+    assert probabilities.shape == (1, 2)
+    assert np.isfinite(probabilities).all()
+    np.testing.assert_allclose(probabilities.sum(axis=1), 1.0)
+
+
+def test_imputer_learns_medians_from_training_only(orders: pd.DataFrame) -> None:
+    x_train, x_test, y_train, _ = split_orders(orders)
+    pipeline = build_pipeline(LogisticRegression(max_iter=1000))
+    pipeline.fit(x_train, y_train)
+
+    numeric_pipeline = pipeline.named_steps["preprocessor"].named_transformers_[
+        "numeric"
+    ]
+    imputer = numeric_pipeline.named_steps["imputer"]
+    expected_medians = x_train[NUMERIC_FEATURES].median().to_numpy()
+
+    np.testing.assert_allclose(imputer.statistics_, expected_medians)
+
+    changed_orders = x_test.copy()
+    changed_orders["distance_km"] = 10000.0
+    pipeline.predict_proba(changed_orders)
+
+    np.testing.assert_allclose(imputer.statistics_, expected_medians)
