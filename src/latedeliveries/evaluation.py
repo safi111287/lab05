@@ -5,6 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import make_scorer, precision_score
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_validate
 
 from .pipeline import RANDOM_STATE, build_pipeline
 
@@ -69,3 +70,40 @@ def compare_models(
         rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+def tune_logistic(
+    x_train: pd.DataFrame,
+    y_train: pd.Series,
+) -> GridSearchCV:
+    """Tune logistic regression using training folds only."""
+    pipeline = build_pipeline(
+        LogisticRegression(
+            class_weight="balanced",
+            max_iter=1000,
+            random_state=RANDOM_STATE,
+        )
+    )
+
+    parameter_grid = {
+        "model__C": [0.01, 0.1, 1.0],
+        "model__fit_intercept": [True, False],
+    }
+
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=RANDOM_STATE,
+    )
+
+    search = GridSearchCV(
+        estimator=pipeline,
+        param_grid=parameter_grid,
+        scoring="roc_auc",
+        cv=cv,
+        refit=True,
+        error_score="raise",
+    )
+    search.fit(x_train, y_train)
+
+    return search
