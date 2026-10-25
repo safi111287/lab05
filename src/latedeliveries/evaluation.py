@@ -5,7 +5,13 @@ from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import make_scorer, precision_score
-from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_validate
+from sklearn.model_selection import (
+    GridSearchCV,
+    StratifiedKFold,
+    cross_val_predict,
+    cross_validate,
+)
+from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier
 
 from .pipeline import RANDOM_STATE, build_pipeline
@@ -167,3 +173,26 @@ def choose_threshold(
     ).iloc[0]
 
     return float(best["threshold"]), results
+
+
+def select_training_threshold(
+    pipeline: Pipeline,
+    x_train: pd.DataFrame,
+    y_train: pd.Series,
+) -> tuple[float, pd.DataFrame]:
+    """Choose a threshold using out-of-fold training probabilities."""
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=RANDOM_STATE,
+    )
+
+    probabilities = cross_val_predict(
+        pipeline,
+        x_train,
+        y_train,
+        cv=cv,
+        method="predict_proba",
+    )[:, 1]
+
+    return choose_threshold(y_train, probabilities)
