@@ -1,7 +1,13 @@
-"""Feature selection and a repeatable train/test split."""
-
 import pandas as pd
+
+from sklearn.base import BaseEstimator
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+"""Feature selection and a repeatable train/test split."""
 
 RANDOM_STATE = 7
 
@@ -32,4 +38,33 @@ def split_orders(
         test_size=0.25,
         random_state=RANDOM_STATE,
         stratify=target,
+    )
+
+
+def build_pipeline(model: BaseEstimator) -> Pipeline:
+    """Prepare the selected features and apply the model."""
+    numeric_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("numeric", numeric_pipeline, NUMERIC_FEATURES),
+            (
+                "categorical",
+                OneHotEncoder(handle_unknown="ignore"),
+                CATEGORICAL_FEATURES,
+            ),
+        ],
+        remainder="drop",
+    )
+
+    return Pipeline(
+        steps=[
+            ("preprocessor", preprocessor),
+            ("model", model),
+        ]
     )
